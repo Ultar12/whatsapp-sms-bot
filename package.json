@@ -1,0 +1,20 @@
+{
+  "name": "whatsapp-sms-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive WhatsApp bot using whalibmob SMS registration",
+  "main": "src/bot.js",
+  "bin": {
+    "whatsapp-bot": "src/bot.js"
+  },
+  "scripts": {
+    "start": "node src/bot.js",
+    "test": "node --check src/bot.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "whalibmob": "git+https://github.com/Kunboruto20/whalibmob.git"
+  }
+}
