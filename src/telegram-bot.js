@@ -17,7 +17,13 @@ const {
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const adminId = String(process.env.TELEGRAM_ADMIN_CHAT_ID || '');
-const sessionDir = process.env.WA_SESSION_DIR || path.join(os.homedir(), '.whatsapp-sms-bot');
+const configuredSessionDir = process.env.WA_SESSION_DIR;
+// /app is Heroku's filesystem path. When the same .env is used in Termux,
+// fall back to the Android user's home directory instead of failing at mkdir.
+const herokuPathOutsideHeroku = configuredSessionDir?.startsWith('/app/') && !process.env.DYNO;
+const sessionDir = herokuPathOutsideHeroku
+  ? path.join(os.homedir(), '.whatsapp-sms-bot')
+  : (configuredSessionDir || path.join(os.homedir(), '.whatsapp-sms-bot'));
 const parallelLimit = Math.max(1, Number.parseInt(process.env.PARALLEL_LIMIT || '3', 10) || 3);
 let method = normalizeMethod(process.env.WA_CODE_METHOD || 'sms');
 
