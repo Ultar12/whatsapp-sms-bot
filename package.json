@@ -1,20 +1,19 @@
 {
-  "name": "whatsapp-sms-bot",
-  "version": "1.0.0",
+  "name": "whatsapp-sms-telegram-bot",
+  "version": "1.1.0",
   "private": true,
-  "description": "Interactive WhatsApp bot using whalibmob SMS registration",
-  "main": "src/bot.js",
-  "bin": {
-    "whatsapp-bot": "src/bot.js"
-  },
+  "description": "Admin-only Telegram controller for a whalibmob WhatsApp SMS bot",
+  "main": "src/telegram-bot.js",
   "scripts": {
-    "start": "node src/bot.js",
-    "test": "node --check src/bot.js"
+    "start": "node src/telegram-bot.js",
+    "test": "node --check src/telegram-bot.js"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
+    "dotenv": "^16.4.7",
+    "node-telegram-bot-api": "^0.66.0",
     "whalibmob": "git+https://github.com/Kunboruto20/whalibmob.git"
   }
 }

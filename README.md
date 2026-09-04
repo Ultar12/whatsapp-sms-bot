@@ -1,40 +1,43 @@
-# WhatsApp SMS Bot
+# Telegram WhatsApp SMS Bot
 
-A small interactive WhatsApp bot built with [`whalibmob`](https://github.com/Kunboruto20/whalibmob). It requests a verification code by SMS, asks for the code locally, saves the authenticated session, and then replies `pong` when it receives `ping`.
+An admin-only Telegram controller for [`whalibmob`](https://github.com/Kunboruto20/whalibmob). You send commands in Telegram; the service requests a WhatsApp verification code, accepts the code, saves the session, and runs a small WhatsApp bot that replies `pong` to `ping`.
 
-## Requirements
+## Telegram commands
 
-- Node.js 18 or newer
-- A real phone number that can receive WhatsApp SMS
-- A connection that WhatsApp accepts for registration
+- `/register 15551234567` — request an SMS verification code
+- `/code 123456` — submit the received code
+- `/status` — show pending registrations and running WhatsApp clients
+- `/stop` — stop running WhatsApp clients
+- `/help` — show the command list
 
-## Setup
+Only the chat ID in `TELEGRAM_ADMIN_CHAT_ID` can use these commands. Other Telegram users receive `Unauthorized.`
+
+## Local setup
 
 ```bash
+cp .env.example .env
+# Edit .env and put in a newly generated BotFather token.
 npm install
 npm start
 ```
 
-The program asks for the phone number in international format, for example `15551234567`. You can also pass it as an argument:
+Never commit `.env`. The supplied token was exposed in chat and must be revoked with BotFather before using a replacement token.
 
-```bash
-npm start -- 15551234567
+## Heroku setup
+
+This repository includes a `Procfile` with a persistent worker process. Create a Heroku app, connect this GitHub repository, and set these Config Vars in Heroku:
+
+```text
+TELEGRAM_BOT_TOKEN=<new token from BotFather>
+TELEGRAM_ADMIN_CHAT_ID=7710721646
+WA_CODE_METHOD=sms
+WA_DISPLAY_NAME=My Telegram WhatsApp Bot
 ```
 
-After WhatsApp sends the code, enter it in the terminal. The session is stored under `~/.whatsapp-sms-bot/` and is reused on later starts.
+Then scale the worker to one process. Do not put the token in source code, Git, or the README.
 
-Send `ping` to the registered WhatsApp account to receive `pong`.
+## Important production limitation
 
-## Configuration
+Heroku dyno filesystems are ephemeral. The local WhatsApp session directory can disappear after a dyno restart or redeploy, requiring registration again. For a durable production bot, store the whalibmob session files in encrypted persistent storage and load them at startup.
 
-```bash
-WA_SESSION_DIR=/secure/path WA_DISPLAY_NAME="My Bot" npm start -- 15551234567
-```
-
-The default registration method is SMS. Set `WA_CODE_METHOD=voice` to request a voice call, or `WA_CODE_METHOD=wa_old` when registering an already-active account through the supported legacy flow.
-
-## Security and operational notes
-
-Never commit the session directory, verification codes, or WhatsApp credentials. This bot uses a non-official WhatsApp client protocol; use it only with accounts and numbers you control and follow WhatsApp's terms. Do not repeatedly request codes: WhatsApp may rate-limit or restrict the number.
-
-This starter bot deliberately has one small behavior (`ping` → `pong`). Add commands incrementally and validate user input before sending messages or changing account data.
+Use only phone numbers and WhatsApp accounts you control, avoid repeated code requests, and follow WhatsApp and Telegram terms.
