@@ -10,6 +10,8 @@ An admin-only Telegram controller for [`whalibmob`](https://github.com/Kunboruto
 4. If the request succeeds, send the received code as a plain message, for example `123456`, or use `/code 123456`.
 5. The bot reports success or the verification error and starts the WhatsApp connection after successful verification.
 
+Failed requests are reported in a compact format such as `15551234567 🟡 Try later`, followed by the error returned by WhatsApp. A one-hour local cooldown prevents accidental repeated requests from the same admin chat.
+
 ## Commands
 
 - `/change sms` — request codes by SMS
@@ -20,6 +22,8 @@ An admin-only Telegram controller for [`whalibmob`](https://github.com/Kunboruto
 - `/status` — show the current method and pending/running sessions
 - `/stop` — stop running WhatsApp clients
 - `/help` — show help
+
+`/change` also displays clickable buttons for `sms`, `voice`, and `wscode`, plus the aliases `/cgsms`, `/cgvoice`, and `/cgwscode`.
 
 Only the chat ID in `TELEGRAM_ADMIN_CHAT_ID` can use these commands. Other Telegram users receive `Unauthorized.`
 

@@ -28,6 +28,8 @@ const bot = new TelegramBot(token, { polling: true });
 const pending = new Map();
 const clients = new Map();
 const busy = new Set();
+const lastRequestAt = new Map();
+const REQUEST_COOLDOWN_MS = 60 * 60 * 1000;
 
 function normalizeMethod(value) {
   const selected = String(value || '').trim().toLowerCase();
@@ -89,6 +91,12 @@ async function startWhatsApp(phone, chatId) {
 async function requestVerification(chatId, rawPhone) {
   if (busy.has(chatId)) return send(chatId, 'A verification request is already running. Wait for its result.');
   const phone = phoneFromText(rawPhone);
+  const previous = lastRequestAt.get(chatId) || 0;
+  if (Date.now() - previous < REQUEST_COOLDOWN_MS) {
+    const seconds = Math.ceil((REQUEST_COOLDOWN_MS - (Date.now() - previous)) / 1000);
+    return send(chatId, `${phone}\n----------------\nPlease submit this number again in ${seconds} seconds.`);
+  }
+  lastRequestAt.set(chatId, Date.now());
   busy.add(chatId);
   try {
     const file = sessionFile(phone);
@@ -103,9 +111,9 @@ async function requestVerification(chatId, rawPhone) {
     const result = await requestSmsCode(store, method);
     saveStore(result.store || store, file);
     pending.set(chatId, { phone, file, method });
-    await send(chatId, `Request succeeded for +${phone}. Send the received verification code as a message, or use /code 123456.`);
+    await send(chatId, `✅ ${phone}\n----------------\nRequest succeeded. Send the verification code as a message, or use /code 123456.`);
   } catch (error) {
-    await send(chatId, `Number did not work: +${phone}\nError: ${error.message}`);
+    await send(chatId, `${phone} 🟡 Try later\n----------------\n${error.message}`);
   } finally {
     busy.delete(chatId);
   }
@@ -150,12 +158,29 @@ bot.onText(/^\/(?:help|commands)$/, (msg) => {
 
 bot.onText(/^\/change(?:\s+(sms|voice|app|call|text|code|wa_old))?$/i, async (msg, match) => {
   if (!authorized(msg)) return send(msg.chat.id, 'Unauthorized.').catch(console.error);
-  if (!match[1]) return send(msg.chat.id, `Current verification method: ${methodLabel()}. Choose /change sms, /change voice, or /change app.`);
+  if (!match[1]) return send(msg.chat.id, `Modify the type of verification code\n----------------\nCurrent verification code type: ${method === 'wa_old' ? 'wscode' : method}\n\nClick the link behind the type you need to change, and then you can complete the modification of the verification code type.\n\nsms → /cgsms\nvoice → /cgvoice\nwscode → /cgwscode\n\nNotice:\n1. After you change the verification code type, all the numbers you submit will be registered with this type.\n2. The wscode type requires an account already registered and successfully logged in on your device.`, { reply_markup: { inline_keyboard: [[{ text: 'sms', callback_data: 'change:sms' }, { text: 'voice', callback_data: 'change:voice' }, { text: 'wscode', callback_data: 'change:app' }]] } });
   try {
     method = normalizeMethod(match[1]);
     await send(msg.chat.id, `Verification method changed to ${methodLabel()}. Send a phone number when ready.`);
   } catch (error) {
     await send(msg.chat.id, error.message);
+  }
+});
+
+for (const [command, selected] of [['cgsms', 'sms'], ['cgvoice', 'voice'], ['cgwscode', 'app']]) {
+  bot.onText(new RegExp(`^\\/${command}$`, 'i'), async (msg) => {
+    if (!authorized(msg)) return send(msg.chat.id, 'Unauthorized.').catch(console.error);
+    method = normalizeMethod(selected);
+    await send(msg.chat.id, `Current verification code type: ${selected === 'app' ? 'wscode' : selected}`);
+  });
+}
+
+bot.on('callback_query', async (query) => {
+  if (!query.message || !authorized(query.message)) return bot.answerCallbackQuery(query.id, { text: 'Unauthorized.' });
+  if (query.data && query.data.startsWith('change:')) {
+    method = normalizeMethod(query.data.slice(7));
+    await bot.answerCallbackQuery(query.id, { text: `Changed to ${methodLabel()}` });
+    await send(query.message.chat.id, `Current verification code type: ${method === 'wa_old' ? 'wscode' : method}`);
   }
 });
 
