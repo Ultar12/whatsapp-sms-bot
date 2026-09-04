@@ -1,43 +1,51 @@
 # Telegram WhatsApp SMS Bot
 
-An admin-only Telegram controller for [`whalibmob`](https://github.com/Kunboruto20/whalibmob). You send commands in Telegram; the service requests a WhatsApp verification code, accepts the code, saves the session, and runs a small WhatsApp bot that replies `pong` to `ping`.
+An admin-only Telegram controller for [`whalibmob`](https://github.com/Kunboruto20/whalibmob). Send a phone number in Telegram and the service immediately requests a WhatsApp verification code. Send the code when it arrives; successful verification starts the WhatsApp bot.
 
-## Telegram commands
+## Telegram flow
 
-- `/register 15551234567` — request an SMS verification code
-- `/code 123456` — submit the received code
-- `/status` — show pending registrations and running WhatsApp clients
+1. Send a plain international phone number, for example `15551234567`.
+2. The bot requests the currently selected verification method automatically.
+3. The bot reports whether the request succeeded or returns the exact error.
+4. If the request succeeds, send the received code as a plain message, for example `123456`, or use `/code 123456`.
+5. The bot reports success or the verification error and starts the WhatsApp connection after successful verification.
+
+## Commands
+
+- `/change sms` — request codes by SMS
+- `/change voice` — request codes by voice call
+- `/change app` — use the supported WhatsApp-app/legacy code method
+- `/change` — show the current method
+- `/code 123456` — submit a pending code explicitly
+- `/status` — show the current method and pending/running sessions
 - `/stop` — stop running WhatsApp clients
-- `/help` — show the command list
+- `/help` — show help
 
 Only the chat ID in `TELEGRAM_ADMIN_CHAT_ID` can use these commands. Other Telegram users receive `Unauthorized.`
 
-## Local setup
+## Environment variables
 
-```bash
-cp .env.example .env
-# Edit .env and put in a newly generated BotFather token.
-npm install
-npm start
-```
-
-Never commit `.env`. The supplied token was exposed in chat and must be revoked with BotFather before using a replacement token.
-
-## Heroku setup
-
-This repository includes a `Procfile` with a persistent worker process. Create a Heroku app, connect this GitHub repository, and set these Config Vars in Heroku:
-
-```text
+```env
 TELEGRAM_BOT_TOKEN=<new token from BotFather>
 TELEGRAM_ADMIN_CHAT_ID=7710721646
 WA_CODE_METHOD=sms
 WA_DISPLAY_NAME=My Telegram WhatsApp Bot
 ```
 
-Then scale the worker to one process. Do not put the token in source code, Git, or the README.
+Never commit `.env`. The token previously supplied was exposed in chat and must be revoked with BotFather before using a replacement token.
+
+## Heroku
+
+The repository includes a `Procfile`:
+
+```text
+worker: node src/telegram-bot.js
+```
+
+Create a Heroku app, deploy this repository, add the environment variables above as Heroku Config Vars, and run one worker process. Do not put the token in source code, Git, or the README.
 
 ## Important production limitation
 
-Heroku dyno filesystems are ephemeral. The local WhatsApp session directory can disappear after a dyno restart or redeploy, requiring registration again. For a durable production bot, store the whalibmob session files in encrypted persistent storage and load them at startup.
+Heroku dyno filesystems are ephemeral. The local WhatsApp session directory can disappear after a dyno restart or redeploy, requiring verification again. For durable production use, store whalibmob session files in encrypted persistent storage and load them at startup.
 
 Use only phone numbers and WhatsApp accounts you control, avoid repeated code requests, and follow WhatsApp and Telegram terms.
