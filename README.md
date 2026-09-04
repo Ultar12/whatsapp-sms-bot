@@ -18,12 +18,11 @@ Failed requests are reported in a compact format such as `15551234567 🟡 Try l
 - `/change voice` — request codes by voice call
 - `/change app` — use the supported WhatsApp-app/legacy code method
 - `/change` — show the current method
-- `/code 123456` — submit a pending code explicitly, but it must also be sent as a reply to the bot's request message
 - `/status` — show the current method and pending/running sessions
 - `/stop` — stop running WhatsApp clients
 - `/help` — show help
 
-`/change` also displays clickable buttons for `sms`, `voice`, and `wscode`, plus the aliases `/cgsms`, `/cgvoice`, and `/cgwscode`.
+`/change` also displays clickable buttons for `sms`, `voice`, and `wscode`, plus the aliases `/cgsms`, `/cgvoice`, and `/cgwscode`. There is no `/code` command: reply to the bot's request message with the digits.
 
 Only the chat ID in `TELEGRAM_ADMIN_CHAT_ID` can use these commands. Other Telegram users receive `Unauthorized.`
 

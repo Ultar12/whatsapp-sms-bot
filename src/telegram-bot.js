@@ -160,7 +160,7 @@ bot.onText(/^\/start$/, (msg) => {
 
 bot.onText(/^\/(?:help|commands)$/, (msg) => {
   if (!authorized(msg)) return send(msg.chat.id, 'Unauthorized.').catch(console.error);
-  return send(msg.chat.id, 'Send a phone number: the bot requests the code automatically.\nThen send the received code.\n/change sms\n/change voice\n/change app\n/status\n/stop');
+  return send(msg.chat.id, 'Send a phone number: the bot requests the code automatically.\nReply to the request message with the received code.\n/change sms\n/change voice\n/change app\n/status\n/stop');
 });
 
 bot.onText(/^\/change(?:\s+(sms|voice|app|call|text|code|wa_old))?$/i, async (msg, match) => {
@@ -191,15 +191,6 @@ bot.on('callback_query', async (query) => {
   }
 });
 
-bot.onText(/^\/code(?:\s+([0-9]{4,8}))?$/, (msg, match) => {
-  if (!authorized(msg)) return send(msg.chat.id, 'Unauthorized.').catch(console.error);
-  const request = pending.get(msg.chat.id);
-  if (!request || !isReplyToCodeRequest(msg, request)) {
-    return send(msg.chat.id, 'Please reply to the bot message requesting the code. Do not send the code as a new message.');
-  }
-  return verifyPending(msg.chat.id, match[1]);
-});
-
 bot.onText(/^\/status$/, async (msg) => {
   if (!authorized(msg)) return send(msg.chat.id, 'Unauthorized.').catch(console.error);
   const pendingText = pending.size ? [...pending.values()].map((x) => `+${x.phone} (${methodLabel(x.method)})`).join(', ') : 'none';
@@ -222,9 +213,7 @@ bot.on('message', async (msg) => {
   const text = msg.text.trim();
   if (/^\d{4,8}$/.test(text) && pending.has(msg.chat.id)) {
     const request = pending.get(msg.chat.id);
-    if (!isReplyToCodeRequest(msg, request)) {
-      return send(msg.chat.id, 'Please reply to the bot message requesting the code. Do not send the code as a new message.');
-    }
+    if (!isReplyToCodeRequest(msg, request)) return;
     return verifyPending(msg.chat.id, text);
   }
   if (/^[+()\-\s\d]{7,25}$/.test(text)) return requestVerification(msg.chat.id, text);
