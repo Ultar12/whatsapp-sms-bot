@@ -110,8 +110,8 @@ async function requestVerification(chatId, rawPhone) {
     await send(chatId, `Requesting a ${methodLabel()} verification code for +${phone}...`);
     const result = await requestSmsCode(store, method);
     saveStore(result.store || store, file);
-    pending.set(chatId, { phone, file, method });
-    await send(chatId, `✅ ${phone}\n----------------\nRequest succeeded. Send the verification code as a message, or use /code 123456.`);
+    const requestMessage = await send(chatId, `✅ ${phone}\n----------------\nRequest succeeded. Reply to this message with the verification code.`);
+    pending.set(chatId, { phone, file, method, requestMessageId: requestMessage.message_id });
   } catch (error) {
     await send(chatId, `${phone} 🟡 Try later\n----------------\n${error.message}`);
   } finally {
@@ -144,6 +144,13 @@ async function verifyPending(chatId, rawCode) {
   } finally {
     busy.delete(chatId);
   }
+}
+
+function isReplyToCodeRequest(msg, request) {
+  return Boolean(
+    msg.reply_to_message &&
+    Number(msg.reply_to_message.message_id) === Number(request.requestMessageId)
+  );
 }
 
 bot.onText(/^\/start$/, (msg) => {
@@ -186,6 +193,10 @@ bot.on('callback_query', async (query) => {
 
 bot.onText(/^\/code(?:\s+([0-9]{4,8}))?$/, (msg, match) => {
   if (!authorized(msg)) return send(msg.chat.id, 'Unauthorized.').catch(console.error);
+  const request = pending.get(msg.chat.id);
+  if (!request || !isReplyToCodeRequest(msg, request)) {
+    return send(msg.chat.id, 'Please reply to the bot message requesting the code. Do not send the code as a new message.');
+  }
   return verifyPending(msg.chat.id, match[1]);
 });
 
@@ -209,7 +220,13 @@ bot.onText(/^\/stop$/, async (msg) => {
 bot.on('message', async (msg) => {
   if (!authorized(msg) || typeof msg.text !== 'string' || msg.text.startsWith('/')) return;
   const text = msg.text.trim();
-  if (/^\d{4,8}$/.test(text) && pending.has(msg.chat.id)) return verifyPending(msg.chat.id, text);
+  if (/^\d{4,8}$/.test(text) && pending.has(msg.chat.id)) {
+    const request = pending.get(msg.chat.id);
+    if (!isReplyToCodeRequest(msg, request)) {
+      return send(msg.chat.id, 'Please reply to the bot message requesting the code. Do not send the code as a new message.');
+    }
+    return verifyPending(msg.chat.id, text);
+  }
   if (/^[+()\-\s\d]{7,25}$/.test(text)) return requestVerification(msg.chat.id, text);
 });
 

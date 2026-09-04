@@ -7,7 +7,7 @@ An admin-only Telegram controller for [`whalibmob`](https://github.com/Kunboruto
 1. Send a plain international phone number, for example `15551234567`.
 2. The bot requests the currently selected verification method automatically.
 3. The bot reports whether the request succeeded or returns the exact error.
-4. If the request succeeds, send the received code as a plain message, for example `123456`, or use `/code 123456`.
+4. If the request succeeds, use Telegram's **Reply** action on the bot's request message and send the received code in that reply. The bot rejects codes sent as unrelated new messages.
 5. The bot reports success or the verification error and starts the WhatsApp connection after successful verification.
 
 Failed requests are reported in a compact format such as `15551234567 🟡 Try later`, followed by the error returned by WhatsApp. A one-hour local cooldown prevents accidental repeated requests from the same admin chat.
@@ -18,7 +18,7 @@ Failed requests are reported in a compact format such as `15551234567 🟡 Try l
 - `/change voice` — request codes by voice call
 - `/change app` — use the supported WhatsApp-app/legacy code method
 - `/change` — show the current method
-- `/code 123456` — submit a pending code explicitly
+- `/code 123456` — submit a pending code explicitly, but it must also be sent as a reply to the bot's request message
 - `/status` — show the current method and pending/running sessions
 - `/stop` — stop running WhatsApp clients
 - `/help` — show help
