@@ -12,7 +12,7 @@ An admin-only Telegram controller for [`whalibmob`](https://github.com/Kunboruto
 
 Multiple numbers can be submitted in parallel. Each number receives its own request message, and replying to that message verifies only its matching number. The default maximum is three simultaneous requests; change it with `PARALLEL_LIMIT`.
 
-Failed requests are reported in a compact format such as `15551234567 🟡 Try later`, followed by the error returned by WhatsApp. A one-hour local cooldown prevents accidental repeated requests from the same admin chat.
+Failed requests are reported in a compact format such as `15551234567 🟡 Try later`, followed by the error returned by WhatsApp. WhatsApp controls retry timing, so errors such as `too_recent` include the actual remaining wait time.
 
 ## Commands
 

@@ -30,8 +30,6 @@ const bot = new TelegramBot(token, { polling: true });
 const pending = new Map();
 const clients = new Map();
 const inFlight = new Set();
-const lastRequestAt = new Map();
-const REQUEST_COOLDOWN_MS = 60 * 60 * 1000;
 
 function normalizeMethod(value) {
   const selected = String(value || '').trim().toLowerCase();
@@ -111,13 +109,7 @@ async function requestVerification(chatId, rawPhone) {
     return send(chatId, `${phone} 🟡 Try later\n----------------\nParallel limit reached (${parallelLimit}).`);
   }
   if (inFlight.has(phone) || clients.has(phone)) return send(chatId, `${phone} is already being processed.`);
-  const previous = lastRequestAt.get(phone) || 0;
-  if (Date.now() - previous < REQUEST_COOLDOWN_MS) {
-    const seconds = Math.ceil((REQUEST_COOLDOWN_MS - (Date.now() - previous)) / 1000);
-    return send(chatId, `${phone}\n----------------\nPlease submit this number again in ${seconds} seconds.`);
-  }
   inFlight.add(phone);
-  lastRequestAt.set(phone, Date.now());
   try {
     const file = sessionFile(phone);
     let store = loadStore(file);
