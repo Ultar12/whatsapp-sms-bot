@@ -18,6 +18,7 @@ const {
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const adminId = String(process.env.TELEGRAM_ADMIN_CHAT_ID || '');
 const sessionDir = process.env.WA_SESSION_DIR || path.join(os.homedir(), '.whatsapp-sms-bot');
+const parallelLimit = Math.max(1, Number.parseInt(process.env.PARALLEL_LIMIT || '3', 10) || 3);
 let method = normalizeMethod(process.env.WA_CODE_METHOD || 'sms');
 
 if (!token) throw new Error('Missing TELEGRAM_BOT_TOKEN environment variable.');
@@ -25,9 +26,10 @@ if (!/^\d+$/.test(adminId)) throw new Error('Missing or invalid TELEGRAM_ADMIN_C
 fs.mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
 
 const bot = new TelegramBot(token, { polling: true });
+// chat ID -> Map(bot request message ID -> registration request)
 const pending = new Map();
 const clients = new Map();
-const busy = new Set();
+const inFlight = new Set();
 const lastRequestAt = new Map();
 const REQUEST_COOLDOWN_MS = 60 * 60 * 1000;
 
@@ -49,7 +51,7 @@ function authorized(msg) {
 
 function phoneFromText(value) {
   const phone = String(value || '').replace(/[^0-9]/g, '');
-  if (phone.length < 7 || phone.length > 15) throw new Error('Use an international number with country code, e.g. 15551234567.');
+  if (phone.length < 7 || phone.length > 15) throw new Error('Use an international phone number with country code.');
   return phone;
 }
 
@@ -57,8 +59,23 @@ function sessionFile(phone) {
   return path.join(sessionDir, `${phone}.json`);
 }
 
-async function send(chatId, text) {
-  return bot.sendMessage(chatId, text);
+function chatRequests(chatId, create = false) {
+  let requests = pending.get(chatId);
+  if (!requests && create) {
+    requests = new Map();
+    pending.set(chatId, requests);
+  }
+  return requests;
+}
+
+function pendingCount() {
+  let count = 0;
+  for (const requests of pending.values()) count += requests.size;
+  return count;
+}
+
+async function send(chatId, text, options) {
+  return bot.sendMessage(chatId, text, options);
 }
 
 async function startWhatsApp(phone, chatId) {
@@ -89,15 +106,18 @@ async function startWhatsApp(phone, chatId) {
 }
 
 async function requestVerification(chatId, rawPhone) {
-  if (busy.has(chatId)) return send(chatId, 'A verification request is already running. Wait for its result.');
   const phone = phoneFromText(rawPhone);
-  const previous = lastRequestAt.get(chatId) || 0;
+  if (inFlight.size >= parallelLimit) {
+    return send(chatId, `${phone} 🟡 Try later\n----------------\nParallel limit reached (${parallelLimit}).`);
+  }
+  if (inFlight.has(phone) || clients.has(phone)) return send(chatId, `${phone} is already being processed.`);
+  const previous = lastRequestAt.get(phone) || 0;
   if (Date.now() - previous < REQUEST_COOLDOWN_MS) {
     const seconds = Math.ceil((REQUEST_COOLDOWN_MS - (Date.now() - previous)) / 1000);
     return send(chatId, `${phone}\n----------------\nPlease submit this number again in ${seconds} seconds.`);
   }
-  lastRequestAt.set(chatId, Date.now());
-  busy.add(chatId);
+  inFlight.add(phone);
+  lastRequestAt.set(phone, Date.now());
   try {
     const file = sessionFile(phone);
     let store = loadStore(file);
@@ -111,28 +131,34 @@ async function requestVerification(chatId, rawPhone) {
     const result = await requestSmsCode(store, method);
     saveStore(result.store || store, file);
     const requestMessage = await send(chatId, `✅ ${phone}\n----------------\nRequest succeeded. Reply to this message with the verification code.`);
-    pending.set(chatId, { phone, file, method, requestMessageId: requestMessage.message_id });
+    chatRequests(chatId, true).set(requestMessage.message_id, { phone, file, method, requestMessageId: requestMessage.message_id });
   } catch (error) {
     await send(chatId, `${phone} 🟡 Try later\n----------------\n${error.message}`);
   } finally {
-    busy.delete(chatId);
+    inFlight.delete(phone);
   }
 }
 
-async function verifyPending(chatId, rawCode) {
-  const request = pending.get(chatId);
-  if (!request) return send(chatId, 'No code is expected. Send a phone number to start a verification request.');
+function findPendingReply(chatId, msg) {
+  const requests = chatRequests(chatId);
+  if (!requests || !msg.reply_to_message) return null;
+  return requests.get(Number(msg.reply_to_message.message_id)) || null;
+}
+
+async function verifyPending(chatId, rawCode, request) {
   const code = String(rawCode || '').replace(/\s/g, '');
-  if (!/^\d{4,8}$/.test(code)) return send(chatId, 'The verification code must contain digits only.');
-  if (busy.has(chatId)) return send(chatId, 'Verification is already running. Wait for its result.');
-  busy.add(chatId);
+  if (!/^\d{4,8}$/.test(code)) return;
+  if (inFlight.has(request.phone)) return;
+  inFlight.add(request.phone);
   try {
     const store = loadStore(request.file);
     if (!store) throw new Error('The saved registration session was not found.');
     const verified = await verifyCode(store, code, { method: request.method });
     if (!verified || !verified.store || !verified.store.registered) throw new Error(`Verification was not successful (status: ${verified && verified.status}).`);
     saveStore(verified.store, request.file);
-    pending.delete(chatId);
+    const requests = chatRequests(chatId);
+    requests?.delete(request.requestMessageId);
+    if (requests?.size === 0) pending.delete(chatId);
     await send(chatId, `Success: +${request.phone} was verified. Starting the WhatsApp bot...`);
     try {
       await startWhatsApp(request.phone, chatId);
@@ -142,15 +168,8 @@ async function verifyPending(chatId, rawCode) {
   } catch (error) {
     await send(chatId, `Verification failed for +${request.phone}.\nError: ${error.message}`);
   } finally {
-    busy.delete(chatId);
+    inFlight.delete(request.phone);
   }
-}
-
-function isReplyToCodeRequest(msg, request) {
-  return Boolean(
-    msg.reply_to_message &&
-    Number(msg.reply_to_message.message_id) === Number(request.requestMessageId)
-  );
 }
 
 bot.onText(/^\/start$/, (msg) => {
@@ -160,12 +179,12 @@ bot.onText(/^\/start$/, (msg) => {
 
 bot.onText(/^\/(?:help|commands)$/, (msg) => {
   if (!authorized(msg)) return send(msg.chat.id, 'Unauthorized.').catch(console.error);
-  return send(msg.chat.id, 'Send a phone number: the bot requests the code automatically.\nReply to the request message with the received code.\n/change sms\n/change voice\n/change app\n/status\n/stop');
+  return send(msg.chat.id, 'Send multiple phone numbers; each starts independently up to the parallel limit.\nReply to each request message with its own code.\n/change sms\n/change voice\n/change app\n/status\n/stop');
 });
 
 bot.onText(/^\/change(?:\s+(sms|voice|app|call|text|code|wa_old))?$/i, async (msg, match) => {
   if (!authorized(msg)) return send(msg.chat.id, 'Unauthorized.').catch(console.error);
-  if (!match[1]) return send(msg.chat.id, `Modify the type of verification code\n----------------\nCurrent verification code type: ${method === 'wa_old' ? 'wscode' : method}\n\nClick the link behind the type you need to change, and then you can complete the modification of the verification code type.\n\nsms → /cgsms\nvoice → /cgvoice\nwscode → /cgwscode\n\nNotice:\n1. After you change the verification code type, all the numbers you submit will be registered with this type.\n2. The wscode type requires an account already registered and successfully logged in on your device.`, { reply_markup: { inline_keyboard: [[{ text: 'sms', callback_data: 'change:sms' }, { text: 'voice', callback_data: 'change:voice' }, { text: 'wscode', callback_data: 'change:app' }]] } });
+  if (!match[1]) return send(msg.chat.id, `Modify the type of verification code\n----------------\nCurrent verification code type: ${method === 'wa_old' ? 'wscode' : method}\n\nsms → /cgsms\nvoice → /cgvoice\nwscode → /cgwscode`, { reply_markup: { inline_keyboard: [[{ text: 'sms', callback_data: 'change:sms' }, { text: 'voice', callback_data: 'change:voice' }, { text: 'wscode', callback_data: 'change:app' }]] } });
   try {
     method = normalizeMethod(match[1]);
     await send(msg.chat.id, `Verification method changed to ${methodLabel()}. Send a phone number when ready.`);
@@ -193,9 +212,9 @@ bot.on('callback_query', async (query) => {
 
 bot.onText(/^\/status$/, async (msg) => {
   if (!authorized(msg)) return send(msg.chat.id, 'Unauthorized.').catch(console.error);
-  const pendingText = pending.size ? [...pending.values()].map((x) => `+${x.phone} (${methodLabel(x.method)})`).join(', ') : 'none';
-  const runningText = clients.size ? [...clients.keys()].map((x) => `+${x}`).join(', ') : 'none';
-  await send(msg.chat.id, `Selected method: ${methodLabel()}\nPending: ${pendingText}\nRunning: ${runningText}`);
+  const pendingLines = [];
+  for (const requests of pending.values()) for (const request of requests.values()) pendingLines.push(`+${request.phone} (${methodLabel(request.method)})`);
+  await send(msg.chat.id, `Selected method: ${methodLabel()}\nPending: ${pendingLines.join(', ') || 'none'}\nRunning: ${clients.size ? [...clients.keys()].map((x) => `+${x}`).join(', ') : 'none'}\nParallel limit: ${parallelLimit}`);
 });
 
 bot.onText(/^\/stop$/, async (msg) => {
@@ -207,17 +226,14 @@ bot.onText(/^\/stop$/, async (msg) => {
   await send(msg.chat.id, 'Stopped running WhatsApp clients.');
 });
 
-// Any plain phone number starts the process; no /register command is needed.
+// Any plain phone number starts independently; a code is accepted only as a reply.
 bot.on('message', async (msg) => {
   if (!authorized(msg) || typeof msg.text !== 'string' || msg.text.startsWith('/')) return;
   const text = msg.text.trim();
-  if (/^\d{4,8}$/.test(text) && pending.has(msg.chat.id)) {
-    const request = pending.get(msg.chat.id);
-    if (!isReplyToCodeRequest(msg, request)) return;
-    return verifyPending(msg.chat.id, text);
-  }
+  const request = findPendingReply(msg.chat.id, msg);
+  if (request && /^\d{4,8}$/.test(text)) return verifyPending(msg.chat.id, text, request);
   if (/^[+()\-\s\d]{7,25}$/.test(text)) return requestVerification(msg.chat.id, text);
 });
 
 bot.on('polling_error', (error) => console.error('Telegram polling error:', error.message));
-console.log('Telegram bot is running. Send a phone number to begin.');
+console.log(`Telegram bot is running. Parallel limit: ${parallelLimit}`);

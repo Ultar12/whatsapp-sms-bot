@@ -10,6 +10,8 @@ An admin-only Telegram controller for [`whalibmob`](https://github.com/Kunboruto
 4. If the request succeeds, use Telegram's **Reply** action on the bot's request message and send the received code in that reply. The bot rejects codes sent as unrelated new messages.
 5. The bot reports success or the verification error and starts the WhatsApp connection after successful verification.
 
+Multiple numbers can be submitted in parallel. Each number receives its own request message, and replying to that message verifies only its matching number. The default maximum is three simultaneous requests; change it with `PARALLEL_LIMIT`.
+
 Failed requests are reported in a compact format such as `15551234567 🟡 Try later`, followed by the error returned by WhatsApp. A one-hour local cooldown prevents accidental repeated requests from the same admin chat.
 
 ## Commands
@@ -33,6 +35,7 @@ TELEGRAM_BOT_TOKEN=<new token from BotFather>
 TELEGRAM_ADMIN_CHAT_ID=7710721646
 WA_CODE_METHOD=sms
 WA_DISPLAY_NAME=My Telegram WhatsApp Bot
+PARALLEL_LIMIT=3
 ```
 
 Never commit `.env`. The token previously supplied was exposed in chat and must be revoked with BotFather before using a replacement token.
